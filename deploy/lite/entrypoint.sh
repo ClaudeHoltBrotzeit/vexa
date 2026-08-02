@@ -83,6 +83,26 @@ export VEXA_MEETING_MODEL="${VEXA_MEETING_MODEL:-}"
 # the worker reads the file directly; the runtime's config.v1 file probe verifies it on /health.
 # Alternative: leave empty and set ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN instead.
 export HOST_CLAUDE_CREDENTIALS="${HOST_CLAUDE_CREDENTIALS:-}"
+# The mount alone is not enough: the claude CLI reads $HOME/.claude/.credentials.json and
+# nothing linked the mount there, so /api/models/test reported "valid" (it only stats the file)
+# while every completion failed with "Not logged in - Please run /login".
+#
+# KNOWN LIMITATION, measured 2026-08-17: this only holds for the life of the container. The
+# host CLI refreshes the token by writing a new file and renaming it over the old one, which
+# allocates a NEW inode. A bind-mount of a single FILE pins the inode it resolved at container
+# start, so the container keeps reading the original file forever. Observed: host inode 424913
+# (fresh), container inode 26045 (15 days stale, long expired) — with the agent silently dead
+# the whole time and /api/models/test still the only thing that would have said so.
+#
+# `docker restart` re-resolves the mount and picks up the current token (verified). A durable
+# fix needs the DIRECTORY mounted rather than the file — at the cost of exposing the rest of
+# ~/.claude (projects, sessions, history) to the container — or an API key instead of the
+# subscription.
+if [ -n "${HOST_CLAUDE_CREDENTIALS}" ] && [ -f "${HOST_CLAUDE_CREDENTIALS}" ]; then
+  mkdir -p "${HOME}/.claude"
+  ln -sf "${HOST_CLAUDE_CREDENTIALS}" "${HOME}/.claude/.credentials.json"
+  echo "  - Claude creds:     linked ${HOST_CLAUDE_CREDENTIALS} -> ${HOME}/.claude/.credentials.json"
+fi
 export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
