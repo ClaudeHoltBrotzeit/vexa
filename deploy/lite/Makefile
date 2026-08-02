@@ -15,6 +15,12 @@ CONTEXT    := $(ROOT)
 # --- DockerHub / image ---
 DOCKERHUB_USER ?= vexaai
 IMAGE_NAME     ?= vexa-lite
+# Sidecar-Images auf Digest gepinnt (Ergane): 'latest' auf einem Datenspeicher heisst,
+# dass ein 'make lite' Wochen spaeter eine andere MinIO-Version zieht als die, gegen die
+# getestet wurde. Beide Digests sind der am 2026-08-02 verifiziert laufende Stand.
+# Bewusst aktualisieren, nicht automatisch driften lassen.
+PG_IMAGE       ?= postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+MINIO_IMAGE    ?= minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
 TAG            ?= dev
 LOCAL_TAG      := $(IMAGE_NAME):$(TAG)
 PLATFORMS      ?= linux/amd64,linux/arm64
@@ -120,7 +126,7 @@ up: preflight
 	IMAGE_TAG=$$(envv IMAGE_TAG); IMAGE_TAG=$${IMAGE_TAG:-v012}; \
 	IMG=$$(docker image inspect $(LOCAL_TAG) >/dev/null 2>&1 && echo $(LOCAL_TAG) || echo $(DOCKERHUB_USER)/$(IMAGE_NAME):$$IMAGE_TAG); \
 	CLAUDE_CREDS="$$HOME/.claude/.credentials.json"; \
-	if [ -f "$$CLAUDE_CREDS" ]; then \
+	if [ -f "$$CLAUDE_CREDS" ] && [ "$$(envv MOUNT_CLAUDE_CREDENTIALS)" = "true" ]; then \
 		echo "  Detected Claude subscription credentials — mounting into container"; \
 		CLAUDE_MOUNT="-v $$CLAUDE_CREDS:/var/lib/vexa/host-claude-credentials:ro -e HOST_CLAUDE_CREDENTIALS=/var/lib/vexa/host-claude-credentials"; \
 	else \
@@ -133,7 +139,7 @@ up: preflight
 			-e POSTGRES_DB=vexa -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
 			-e TZ=UTC -e PGTZ=UTC \
 			-v vexa-lite-pgdata:/var/lib/postgresql/data \
-			postgres:17-alpine -c idle_in_transaction_session_timeout=60000 > /dev/null; \
+			$(PG_IMAGE) -c idle_in_transaction_session_timeout=60000 > /dev/null; \
 		for i in $$(seq 1 24); do docker exec $(PG_CONTAINER) pg_isready -U postgres -d vexa -q 2>/dev/null && break; sleep 2; done; \
 	fi; echo "  ✓ PostgreSQL ready"; \
 	echo "Starting MinIO ($(MINIO_CONTAINER))..."; \
@@ -142,7 +148,7 @@ up: preflight
 		docker run -d --name $(MINIO_CONTAINER) --network $(NETWORK) --restart unless-stopped \
 			-e MINIO_ROOT_USER=$(MINIO_ACCESS_KEY) -e MINIO_ROOT_PASSWORD=$(MINIO_SECRET_KEY) \
 			-v vexa-lite-miniodata:/data \
-			minio/minio:latest server /data --console-address ":9001" > /dev/null; \
+			$(MINIO_IMAGE) server /data --console-address ":9001" > /dev/null; \
 		sleep 4; \
 		docker run --rm --network $(NETWORK) --entrypoint sh minio/mc:latest -c \
 			"mc alias set vexa http://$(MINIO_CONTAINER):9000 $(MINIO_ACCESS_KEY) $(MINIO_SECRET_KEY) && mc mb --ignore-existing vexa/$(MINIO_BUCKET)" >/dev/null 2>&1 || true; \
