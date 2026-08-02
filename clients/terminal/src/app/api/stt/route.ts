@@ -41,7 +41,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // meeting pipeline's invocation carries; unset → whisper-1.
   form.append("model", process.env.TRANSCRIPTION_MODEL || "whisper-1");
   form.append("response_format", "verbose_json");
-  form.append("timestamp_granularities", "word");
+  form.append("timestamp_granularities[]", "word");
   if (prompt) form.append("prompt", prompt.slice(0, 800));
 
   const headers: Record<string, string> = {};
