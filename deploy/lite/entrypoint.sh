@@ -101,6 +101,13 @@ export HOST_CLAUDE_CREDENTIALS="${HOST_CLAUDE_CREDENTIALS:-}"
 if [ -n "${HOST_CLAUDE_CREDENTIALS}" ] && [ -f "${HOST_CLAUDE_CREDENTIALS}" ]; then
   mkdir -p "${HOME}/.claude"
   ln -sf "${HOST_CLAUDE_CREDENTIALS}" "${HOME}/.claude/.credentials.json"
+  # config_test.py hardcodes CREDS_PATH = /var/lib/vexa/host-claude-credentials and never reads
+  # HOST_CLAUDE_CREDENTIALS — the very variable whose absence it reports. Keep that path valid
+  # too, or /api/models/test reports "no credentials mounted" on a working deployment.
+  if [ "${HOST_CLAUDE_CREDENTIALS}" != "/var/lib/vexa/host-claude-credentials" ]; then
+    mkdir -p /var/lib/vexa
+    ln -sf "${HOST_CLAUDE_CREDENTIALS}" /var/lib/vexa/host-claude-credentials
+  fi
   echo "  - Claude creds:     linked ${HOST_CLAUDE_CREDENTIALS} -> ${HOME}/.claude/.credentials.json"
 fi
 export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
