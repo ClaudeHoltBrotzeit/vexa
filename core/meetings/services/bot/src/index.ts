@@ -35,6 +35,12 @@ import { createBotRecordingSink } from './recording.js';
 import { createCaptureSignalRecorder, wrapTranscribeWithTap, type CaptureSignalRecorder } from './telemetry.js';
 import { createSttFaultReporter } from './stt-faults.js';
 import { launchBrowser, startCaptureBridge, startRecording, createSpeakController, type BrowserSession, type SpeakController } from './capture-bridge.js';
+import {
+  googleChatSendBrowserAction,
+  googleChatToggleMatchers,
+  googleChatInputSelectors,
+  googleChatSendMatchers,
+} from '@vexa/join';
 import { createRemoteAudioActivityTap, createSilenceAlonenessSource, resolveAloneSilenceWindowMs } from './aloneness.js';
 import { installSignalHandlers } from './signals.js';
 import type {
@@ -115,12 +121,34 @@ function teeActs(source: ActsSource, voice: (act: Act) => void | Promise<void>):
   };
 }
 
-/** The bot's voice-act handler: route acts.v1 speak / speak_stop to the SpeakController. The
- *  other voice acts (chat/screen/avatar) are out of this increment's scope. */
-function voiceHandler(speak: SpeakController): (act: Act) => Promise<void> {
+/** The bot's act handler: routes acts.v1 speak / speak_stop to the SpeakController and
+ *  chat_send into the meeting's chat panel. screen/avatar acts remain unimplemented — they are
+ *  declared in contracts.ts but nothing dispatches them, so a published command is accepted by
+ *  the subscriber and silently dropped. chat_send behaved that way until this change.
+ *
+ *  A failing act never propagates: these run on the acts bus while the bot is seated in a
+ *  meeting, and dying because a chat panel moved is worse than skipping one message. */
+// Page type comes off BrowserSession rather than a direct playwright import: the bot has no
+// direct dependency on playwright, and adding one just to name a type would be wrong.
+type BrowserPage = BrowserSession['page'];
+
+function voiceHandler(speak: SpeakController, page?: BrowserPage): (act: Act) => Promise<void> {
   return async (act) => {
     if (act.action === 'speak') await speak.speak(act.text, act.voice);
     else if (act.action === 'speak_stop') await speak.stop();
+    else if (act.action === 'chat_send') {
+      if (!page) { console.warn('[bot] chat_send ignored: no browser page'); return; }
+      try {
+        const ok = await page.evaluate(googleChatSendBrowserAction, [act.text, {
+          toggles: googleChatToggleMatchers,
+          inputs: googleChatInputSelectors,
+          sends: googleChatSendMatchers,
+        }] as const);
+        if (!ok) console.warn('[bot] chat_send: message not delivered (chat panel unavailable?)');
+      } catch (e) {
+        console.error(`[bot] chat_send failed: ${serr(e)}`);
+      }
+    }
   };
 }
 
@@ -257,7 +285,7 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     });
     // Voice: tee acts so `speak`/`speak_stop` reach the SpeakController (gated on voiceAgentEnabled).
     const speak = createSpeakController(session.page, inv);
-    acts = teeActs(liveActs, voiceHandler(speak));
+    acts = teeActs(liveActs, voiceHandler(speak, session.page));
   } catch (e) {
     console.error(`[bot] browser launch/capture wiring failed — falling back to clean terminal failed: ${String(e)}`);
     join = noBrowserJoinDriver(String(e));
