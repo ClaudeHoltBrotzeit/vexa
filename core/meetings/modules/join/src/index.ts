@@ -145,6 +145,15 @@ export { joinGoogleMeeting, waitForGoogleMeetingAdmission, checkForGoogleAdmissi
 export { AdmissionError } from "./shared/admission";
 export type { AdmissionOutcome } from "./shared/admission";
 export { AuthSessionError } from "./googlemeet/join";
+
+// chat_send: the browser-context routine plus the matchers it needs. Exported together so a
+// consumer cannot serialize the routine with a stale or hand-rolled selector set.
+export { googleChatSendBrowserAction, type ChatSendArgs } from "./googlemeet/chat";
+export {
+  googleChatToggleMatchers,
+  googleChatInputSelectors,
+  googleChatSendMatchers,
+} from "./googlemeet/selectors";
 export { joinMicrosoftTeams, waitForTeamsMeetingAdmission, checkForTeamsAdmissionSilent, prepareForTeamsRecording, leaveMicrosoftTeams, startTeamsRemovalMonitor };
 // The Teams anonymous-join origin guard. A meetup-join redirected to the Microsoft sign-in host
 // terminates the join THERE with `TeamsJoinRedirectError` — deliberately not an AdmissionError, so

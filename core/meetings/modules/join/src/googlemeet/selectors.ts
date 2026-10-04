@@ -486,3 +486,36 @@ export const browserContextSelectorArrays: string[] = [
   'googleLobbyIconGlyphSelectors',
 ];
 
+
+// Chat-panel matchers for the BROWSER context (plain CSS + optional text filter,
+// same contract as googleLeaveButtonMatchers — no Playwright engines here).
+// Google Meet localizes aria-labels, so each concept lists the English label plus
+// a structural fallback that survives translation.
+
+/** Toggles the chat side panel open. Only needed when the panel is closed. */
+export const googleChatToggleMatchers: BrowserContextButtonMatcher[] = [
+  { css: 'button[aria-label*="Chat with everyone"]' },
+  { css: 'button[aria-label*="chat with everyone"]' },
+  { css: 'button[aria-label*="Chat"]' },
+  { css: 'button[aria-label*="chat"]' },
+  { css: 'button[jsname][data-panel-id="2"]' },
+];
+
+/** The message input inside the open panel. Meet has used both a textarea and a
+ *  contenteditable over time, so both shapes are listed. */
+export const googleChatInputSelectors: string[] = [
+  'textarea[aria-label*="Send a message"]',
+  'textarea[aria-label*="send a message"]',
+  'textarea[placeholder*="Send a message"]',
+  'div[contenteditable="true"][aria-label*="Send a message"]',
+  'textarea[aria-label*="message"]',
+  'div[contenteditable="true"][aria-label*="message"]',
+];
+
+/** Send button. Enter usually suffices; this is the fallback when it does not. */
+export const googleChatSendMatchers: BrowserContextButtonMatcher[] = [
+  { css: 'button[aria-label*="Send a message"]' },
+  { css: 'button[aria-label*="Send message"]' },
+  { css: 'button[aria-label*="Send"]' },
+  { css: 'button[jsname]', text: 'send' },
+];

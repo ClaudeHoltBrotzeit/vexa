@@ -192,10 +192,14 @@ export class TranscriptionClient {
       ));
     }
 
-    // Request word-level timestamps
+    // Request word-level timestamps. The field name MUST carry the array brackets:
+    // the OpenAI-compatible spec types this parameter as an array, and validating
+    // backends reject the bare name - Groq answers HTTP 400 'unknown param
+    // timestamp_granularities' for every chunk, so a meeting records fine and
+    // transcribes nothing.
     parts.push(Buffer.from(
       `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="timestamp_granularities"\r\n\r\n` +
+      `Content-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\n` +
       `word\r\n`
     ));
 

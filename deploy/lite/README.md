@@ -154,3 +154,25 @@ The full-journey smoke (spawn → schedule → boot → join → transcribe → 
 one-shot log sweep of the container and every bot workload log), driven through the published
 gateway. Lite runs the real bot, so the dead-URL journey's truthful terminal is a NAMED
 failure — never a fake green. See `deploy/lite/probe.sh`.
+
+## Speaker-stream tuning against a rate-limited STT backend
+
+The bot re-submits each speaker's growing buffer every `submitInterval` seconds (default 2)
+until `confirmThreshold` consecutive results agree — deliberate redundancy that keeps the live
+transcript flowing, but it multiplies request count well past the audio duration.
+
+Against Groq's free tier (20 requests/min for Whisper) this saturates immediately. Measured on
+a four-speaker, 17.7-minute meeting with defaults: 376 requests (21.2/min), 1720 rate-limit
+responses, 268 segments lost for good — more audio dropped than transcribed, while the bot
+reported healthy throughout.
+
+If your STT backend caps requests rather than audio minutes, trade latency for request count:
+
+```bash
+BOT_SPEAKER_SUBMIT_INTERVAL_SEC=6   # default 2
+BOT_SPEAKER_MIN_AUDIO_SEC=4         # default 2
+```
+
+Roughly a third of the requests, at the cost of the transcript arriving later. Fine for
+recording, noticeable for anything acting on the transcript live. Leave the defaults if your
+backend is billed per audio-minute rather than per request.
