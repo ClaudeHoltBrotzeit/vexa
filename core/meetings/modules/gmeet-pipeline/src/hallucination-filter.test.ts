@@ -39,5 +39,13 @@ check('tr: case/punctuation-insensitive ("abone olmayı unutmayın.")', isHalluc
 check("real Spanish speech still kept (no over-filter)",
   isHallucination("empecemos con el bounded context de facturacion") === false);
 
+// de — with language pinned to German, faint audio hallucinates "Vielen Dank." instead of
+// "Thank you.": 324 of 740 segments in a live German meeting. Ten chars, two words, so no
+// structural rule catches it — only the harvested list does. A real sentence around it stays.
+check('de: "Vielen Dank." filtered', isHallucination("Vielen Dank.") === true);
+check('de: case/punctuation-insensitive ("vielen dank")', isHallucination("vielen dank") === true);
+check("real German speech with the same words kept",
+  isHallucination("Vielen Dank fürs Zuhören.") === false && isHallucination("Vielen Dank, Herr Kappen.") === false);
+
 if (failed) { console.error(`\n❌ hallucination-filter: ${failed} checks FAILED.`); process.exit(1); }
 console.log(`\n✅ hallucination-filter: all checks pass — phrase-list + short/repetition junk dropped, real speech kept.`);

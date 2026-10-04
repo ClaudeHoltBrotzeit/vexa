@@ -14,6 +14,10 @@ import { log } from './log.js';
 const here = dirname(fileURLToPath(import.meta.url));
 let phrases: Set<string> | null = null;
 
+/** Lower-cased, trailing sentence punctuation removed — applied to list entries and input alike,
+ *  so "Vielen Dank." in a list matches "vielen dank" from the STT and vice versa. */
+const normalize = (s: string): string => s.trim().toLowerCase().replace(/[.!?…]+$/g, '').trim();
+
 function loadPhrases(): Set<string> {
   if (phrases) return phrases;
   phrases = new Set();
@@ -26,7 +30,10 @@ function loadPhrases(): Set<string> {
         const content = readFileSync(join(dir, file), 'utf-8');
         for (const line of content.split('\n')) {
           const t = line.trim();
-          if (t && !t.startsWith('#')) phrases.add(t.toLowerCase());
+          if (t && !t.startsWith('#')) {
+            const n = normalize(t);
+            if (n) phrases.add(n);
+          }
         }
       }
     }
@@ -46,13 +53,9 @@ export function isHallucination(text: string): boolean {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
-  // Known phrase (exact match, then retry with normalized punctuation)
+  // Known phrase, compared with trailing punctuation normalized on both sides
   const db = loadPhrases();
-  if (db.has(lower)) return true;
-  const stripped = lower.replace(/[.!?…]+$/g, '').replace(/\.{2,}$/g, '');
-  if (stripped !== lower && db.has(stripped)) return true;
-  if (stripped !== lower && db.has(stripped + '...')) return true;
-  if (stripped !== lower && db.has(stripped + '.')) return true;
+  if (db.has(normalize(lower))) return true;
 
   // Too short (single word < 10 chars)
   const words = trimmed.split(/\s+/);
