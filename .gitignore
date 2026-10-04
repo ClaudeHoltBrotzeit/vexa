@@ -31,3 +31,8 @@ deploy/transcription/models/
 
 # Release working handoff notes are local-only (per-version); witness.json stays tracked.
 releases/*/HANDOFF.md
+
+# local API keys and merge/patch leftovers — never committed
+.api-key
+*.orig
+*.rej
