@@ -9,6 +9,7 @@ import {
   nonSpeechCorpus,
   harvest,
   renderHarvestFile,
+  harvestClientOptions,
   type Transcribe,
 } from './harvest-hallucinations.js';
 
@@ -60,6 +61,13 @@ check('the failure was reported, not swallowed', errs === 1);
 const body = renderHarvestFile('ja', ['b', 'a', 'a', ' a '], { model: 'large-v3', date: '2026-07-14', url: 'https://x' });
 check('rendered file has a GENERATED provenance header', body.includes('GENERATED') && body.includes('large-v3'));
 check('rendered phrases are sorted + deduped', body.trimEnd().endsWith('a\nb'));
+
+// The STT client asks for the configured model. Unset, a validating backend (Groq, vLLM) answers
+// the "whisper-1" default 404 for every request and the sweep reports 0 hallucinations everywhere.
+const opts = harvestClientOptions({ VEXA_TX_KEY: 'k', VEXA_TX_URL: 'https://stt', VEXA_STT_MODEL: 'whisper-large-v3-turbo' });
+check('the configured STT model reaches the client', opts.model === 'whisper-large-v3-turbo');
+check('URL and key reach the client', opts.serviceUrl === 'https://stt' && opts.apiToken === 'k');
+check('no model configured → the client keeps its own default', !('model' in harvestClientOptions({ VEXA_TX_KEY: 'k' })));
 
 if (failed) { console.error(`\n❌ harvest-hallucinations: ${failed} checks FAILED.`); process.exit(1); }
 console.log('\n✅ harvest-hallucinations: language set, non-speech corpus, sweep, dedup, and rendering all correct.');
