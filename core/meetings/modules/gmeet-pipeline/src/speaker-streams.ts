@@ -29,6 +29,11 @@ interface SpeakerBuffer {
   /** Samples already confirmed and emitted — next submission starts here */
   confirmedSamples: number;
   lastTranscript: string;
+  /** Buffer offset (samples) where the audio behind lastTranscript ends. Audio past it was never
+   *  transcribed into lastTranscript, so a flush of lastTranscript must keep it. */
+  lastTranscriptEndSamples: number;
+  /** Buffer offset (samples) where the outstanding submission's window ends. */
+  inFlightEndSamples: number;
   confirmCount: number;
   /** Word-level prefix confirmation: words from previous Whisper submission */
   lastWords: string[];
@@ -144,6 +149,8 @@ export class SpeakerStreamManager {
       totalSamples: 0,
       confirmedSamples: 0,
       lastTranscript: '',
+      lastTranscriptEndSamples: 0,
+      inFlightEndSamples: 0,
       confirmCount: 0,
       lastWords: [],
       inFlight: false,
@@ -377,6 +384,7 @@ export class SpeakerStreamManager {
       buffer.lastTranscript = trimmed;
       buffer.confirmCount = 1;
     }
+    buffer.lastTranscriptEndSamples = buffer.inFlightEndSamples;
 
     if (buffer.confirmCount >= this.confirmThreshold) {
       // CONFIRMED — emit and advance offset to Whisper's segment boundary.
@@ -590,9 +598,23 @@ export class SpeakerStreamManager {
       if (buffer.confirmedSamples === 0) {
         // Nothing confirmed — confirmation never triggered. Force-flush whatever
         // transcript we have to prevent monolith segments (e.g. 120s+ buffer).
+        // The transcript covers only its own submission's window; the audio after it
+        // starts the next window instead of being discarded with the buffer.
         if (buffer.lastTranscript) {
           log(`[SpeakerStreams] Hard cap force-flush for "${buffer.speakerName}" (${totalSec.toFixed(1)}s > ${this.maxBufferDuration}s, no confirmation)`);
-          this.emitSegment(buffer, buffer.lastTranscript);
+          const coveredSamples = buffer.lastTranscriptEndSamples;
+          const tail = this.sliceFrom(buffer, coveredSamples);
+          const tailStartMs = buffer.windowStartMs + (coveredSamples / this.sampleRate) * 1000;
+          this.emitSegment(buffer, buffer.lastTranscript, coveredSamples);
+          this.fullReset(buffer);
+          if (tail.length > 0) {
+            buffer.chunks = [tail];
+            buffer.totalSamples = tail.length;
+            buffer.windowStartMs = tailStartMs;
+            buffer.bufferStartMs = tailStartMs;
+            log(`[SpeakerStreams] Carried ${(tail.length / this.sampleRate).toFixed(1)}s untranscribed audio into the next window for "${buffer.speakerName}"`);
+          }
+          return;
         }
         this.fullReset(buffer);
         return;
@@ -646,6 +668,7 @@ export class SpeakerStreamManager {
     }
 
     buffer.inFlight = true;
+    buffer.inFlightEndSamples = buffer.totalSamples;
     this.submitGeneration.set(buffer.speakerId, buffer.generation);
 
     try {
@@ -660,8 +683,9 @@ export class SpeakerStreamManager {
 
   /**
    * Emit a confirmed segment. Does NOT reset the buffer — just publishes.
+   * @param coveredSamples - buffer offset where the text's audio ends; defaults to the whole buffer.
    */
-  private emitSegment(buffer: SpeakerBuffer, text: string): void {
+  private emitSegment(buffer: SpeakerBuffer, text: string, coveredSamples: number = buffer.totalSamples): void {
     if (!text || !this.onSegmentConfirmed) return;
     if (isHallucination(text)) {
       log(`[SpeakerStreams] [FILTERED] Hallucination in emit for "${buffer.speakerName}": "${text.substring(0, 60)}"`);
@@ -678,8 +702,8 @@ export class SpeakerStreamManager {
     // Audio-time end via the buffer's gapless timeline — NOT Date.now(),
     // which is submit/commit ARRIVAL time and overstates the span by the
     // whole commit lag (segments then visually overlap their successors).
-    const endMs = buffer.totalSamples > 0
-      ? buffer.windowStartMs + (buffer.totalSamples / this.sampleRate) * 1000
+    const endMs = coveredSamples > 0
+      ? buffer.windowStartMs + (coveredSamples / this.sampleRate) * 1000
       : Date.now();
     const segmentId = `${buffer.speakerId}:${buffer.sequenceNumber}`;
     this.onSegmentConfirmed(buffer.speakerId, buffer.speakerName, text, buffer.windowStartMs, endMs, segmentId, buffer.lastLanguage);
@@ -778,6 +802,7 @@ export class SpeakerStreamManager {
     }
     buffer.totalSamples = keep;
     if (buffer.confirmedSamples > keep) buffer.confirmedSamples = keep;
+    buffer.inFlightEndSamples = Math.min(buffer.inFlightEndSamples, keep);
     buffer.lastTranscript = '';
     buffer.confirmCount = 0;
     buffer.lastWords = [];
@@ -810,7 +835,22 @@ export class SpeakerStreamManager {
 
     buffer.chunks = newChunks;
     buffer.totalSamples -= buffer.confirmedSamples;
+    buffer.lastTranscriptEndSamples = Math.max(0, buffer.lastTranscriptEndSamples - buffer.confirmedSamples);
+    buffer.inFlightEndSamples = Math.max(0, buffer.inFlightEndSamples - buffer.confirmedSamples);
     buffer.confirmedSamples = 0;
+  }
+
+  /** Copy of the buffered audio from `offset` (samples) to the end. */
+  private sliceFrom(buffer: SpeakerBuffer, offset: number): Float32Array {
+    const out = new Float32Array(Math.max(0, buffer.totalSamples - offset));
+    let skip = offset, dst = 0;
+    for (const chunk of buffer.chunks) {
+      if (skip >= chunk.length) { skip -= chunk.length; continue; }
+      out.set(chunk.subarray(skip), dst);
+      dst += chunk.length - skip;
+      skip = 0;
+    }
+    return out;
   }
 
   /**
@@ -821,6 +861,8 @@ export class SpeakerStreamManager {
     buffer.totalSamples = 0;
     buffer.confirmedSamples = 0;
     buffer.lastTranscript = '';
+    buffer.lastTranscriptEndSamples = 0;
+    buffer.inFlightEndSamples = 0;
     buffer.confirmCount = 0;
     buffer.lastWords = [];
     buffer.inFlight = false;
