@@ -70,6 +70,10 @@ sets the port to the literal string `13000  # the UI`.
 | `NEXTAUTH_SECRET` | `dev-nextauth-secret` | Session secret for the web UI. |
 | `VEXA_BOT_API_KEY` | — | Pre-shared key a bot uses to call back into the stack. |
 
+The defaults above are the compose development values. **Vexa Lite ships none of them:** an unset
+`ADMIN_TOKEN`, `INTERNAL_API_SECRET`, `VEXA_DISPATCH_SIGNING_KEY` or `NEXTAUTH_SECRET` is generated
+randomly on first start, and its front doors bind to `127.0.0.1` unless `BIND_ADDR` says otherwise.
+
 ## Bot participant name
 
 The terminal client uses `NEXT_PUBLIC_DEFAULT_BOT_NAME` at build time and falls back to

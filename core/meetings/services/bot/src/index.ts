@@ -139,11 +139,12 @@ function voiceHandler(speak: SpeakController, page?: BrowserPage): (act: Act) =>
     else if (act.action === 'chat_send') {
       if (!page) { console.warn('[bot] chat_send ignored: no browser page'); return; }
       try {
-        const ok = await page.evaluate(googleChatSendBrowserAction, [act.text, {
+        const ok = await page.evaluate(googleChatSendBrowserAction, {
+          text: act.text,
           toggles: googleChatToggleMatchers,
           inputs: googleChatInputSelectors,
           sends: googleChatSendMatchers,
-        }] as const);
+        });
         if (!ok) console.warn('[bot] chat_send: message not delivered (chat panel unavailable?)');
       } catch (e) {
         console.error(`[bot] chat_send failed: ${serr(e)}`);

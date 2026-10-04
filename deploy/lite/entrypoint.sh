@@ -35,9 +35,35 @@ export DB_PASSWORD="${DB_PASSWORD:-postgres}"
 # ─── Defaults for every var supervisord interpolates (empty is fine; must be SET) ─────────────────
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 export DISPLAY="${DISPLAY:-:99}"
-export ADMIN_API_TOKEN="${ADMIN_API_TOKEN:-${ADMIN_TOKEN:-changeme}}"
-export INTERNAL_API_SECRET="${INTERNAL_API_SECRET:-lite-internal-secret}"
 export DEFAULT_BOT_NAME="${DEFAULT_BOT_NAME:-}"
+
+# ─── Secrets — never a published default ──────────────────────────────────────────────────────────
+# The front doors are reachable from wherever the operator publishes them, so a well-known value
+# here would let anyone mint admin tokens or forge sessions. An unset secret is generated once and
+# persisted in the container's writable layer, so restarts keep it; a recreated container generates
+# fresh ones (internal-only keys and UI sessions, so the cost is a re-login). ADMIN_TOKEN is the one
+# the host needs: `make up` persists it in the repo-root .env; a bare `docker run` reads it with
+#   docker exec <container> cat /var/lib/vexa/generated-secrets.env
+SECRETS_FILE=/var/lib/vexa/generated-secrets.env
+mkdir -p "$(dirname "$SECRETS_FILE")"
+touch "$SECRETS_FILE"
+chmod 600 "$SECRETS_FILE"
+ensure_secret() {
+  local name="$1" value
+  if [ -n "${!name:-}" ]; then export "$name"; return; fi
+  value="$(sed -n "s/^${name}=//p" "$SECRETS_FILE" | head -1)"
+  if [ -z "$value" ]; then
+    value="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    echo "${name}=${value}" >> "$SECRETS_FILE"
+    echo "  - ${name}: generated (stored in ${SECRETS_FILE})"
+  fi
+  export "${name}=${value}"
+}
+export ADMIN_API_TOKEN="${ADMIN_API_TOKEN:-${ADMIN_TOKEN:-}}"
+ensure_secret ADMIN_API_TOKEN
+ensure_secret INTERNAL_API_SECRET
+ensure_secret VEXA_DISPATCH_SIGNING_KEY
+ensure_secret NEXTAUTH_SECRET
 
 # Optional Google Meet speaker-stream tuning. Empty values preserve bot defaults; the runtime
 # profile forwards configured values to every spawned bot process.
@@ -73,7 +99,6 @@ export AGENT_WORKER_COMMAND="${AGENT_WORKER_COMMAND:-/usr/local/bin/vexa-agent-w
 
 # Agent control plane + worker (BYO inference; credentials brokered by the runtime).
 export VEXA_AGENT_DEFAULT_SUBJECT="${VEXA_AGENT_DEFAULT_SUBJECT:-u_live}"
-export VEXA_DISPATCH_SIGNING_KEY="${VEXA_DISPATCH_SIGNING_KEY:-dev-dispatch-signing-key}"
 export VEXA_BOT_API_KEY="${VEXA_BOT_API_KEY:-}"
 export VEXA_AGENT_MODEL="${VEXA_AGENT_MODEL:-}"
 export VEXA_MEETING_MODEL="${VEXA_MEETING_MODEL:-}"
@@ -123,8 +148,6 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}"
 export VEXA_PUBLIC_API_URL="${VEXA_PUBLIC_API_URL:-http://localhost:8056}"
 export VEXA_API_KEY="${VEXA_API_KEY:-}"
 export TERMINAL_PUBLIC_URL="${TERMINAL_PUBLIC_URL:-http://localhost:3001}"
-export NEXTAUTH_SECRET="${NEXTAUTH_SECRET:-vexa-lite-nextauth-secret}"
-export JWT_SECRET="${JWT_SECRET:-vexa-lite-jwt-secret}"
 
 # Workspace store for the agent (shared dir; the worker runs in-process, no volume bind).
 mkdir -p /workspaces /var/lib/redis /var/run/redis
@@ -157,6 +180,16 @@ fi
 case "$*" in
     *supervisord*) /usr/local/bin/provision-key.sh & ;;
 esac
+
+# ─── Stale X display state ────────────────────────────────────────────────────────────────────────
+# /tmp lives in the container's writable layer, so a restart (`--restart unless-stopped`, host
+# reboot, Docker Desktop restart) inherits the previous run's /tmp/.X99-lock. Xvfb treats the lock
+# as live whenever the PID it names exists — and after a restart that PID usually belongs to some
+# other freshly spawned process — so Xvfb exits with "Server is already active for display 99",
+# supervisord gives up on it (and on fluxbox/x11vnc), and every bot then fails to launch Chromium
+# ("Missing X server or $DISPLAY"). No X server can be running before supervisord starts one, so
+# any display state present here is stale. Display :99 matches supervisord.conf's xvfb program.
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
 
 echo "Starting services via supervisord..."
 exec "$@"

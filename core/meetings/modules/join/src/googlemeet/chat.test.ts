@@ -42,11 +42,16 @@ function mountDom(html: string) {
   return { dom, clicked, keys, doc: dom.window.document };
 }
 
-const args = {
+const matchers = {
   toggles: googleChatToggleMatchers,
   inputs: googleChatInputSelectors,
   sends: googleChatSendMatchers,
 };
+
+// page.evaluate(fn, arg) hands the page function exactly ONE argument. Invoke it the same way,
+// so a signature that only works when called directly fails here and not in a live meeting.
+const send = (text: string) =>
+  (googleChatSendBrowserAction as (arg: unknown) => Promise<boolean>)({ text, ...matchers });
 
 const OPEN_PANEL = `
   <button aria-label="Chat with everyone" data-fixture-id="toggle"></button>
@@ -62,7 +67,7 @@ async function run() {
   // 1. Offener Panel: Text landet im Feld, Absenden wird ausgeloest
   {
     const { clicked, doc } = mountDom(OPEN_PANEL);
-    const ok = await googleChatSendBrowserAction('Hallo Team', args);
+    const ok = await send('Hallo Team');
     const field = doc.querySelector('[data-fixture-id="input"]') as HTMLTextAreaElement;
     check('meldet Erfolg', ok, true);
     check('Text steht im Eingabefeld', field.value, 'Hallo Team');
@@ -73,7 +78,7 @@ async function run() {
   //    aber der Toggle MUSS geklickt worden sein.
   {
     const { clicked } = mountDom(CLOSED_PANEL);
-    const ok = await googleChatSendBrowserAction('Hallo', args);
+    const ok = await send('Hallo');
     check('oeffnet den geschlossenen Panel', clicked.includes('toggle'), true);
     check('meldet Misserfolg ohne Eingabefeld', ok, false);
   }
@@ -81,7 +86,7 @@ async function run() {
   // 3. Leerer Text wird nicht gesendet (sonst postet ein Bug leere Zeilen ins Meeting)
   {
     const { clicked } = mountDom(OPEN_PANEL);
-    const ok = await googleChatSendBrowserAction('   ', args);
+    const ok = await send('   ');
     check('sendet keinen leeren Text', ok, false);
     check('klickt dabei nicht auf Senden', clicked.includes('send'), false);
   }
@@ -91,7 +96,7 @@ async function run() {
     mountDom('<div>nichts hier</div>');
     let threw = false;
     let ok: boolean | undefined;
-    try { ok = await googleChatSendBrowserAction('Hallo', args); } catch { threw = true; }
+    try { ok = await send('Hallo'); } catch { threw = true; }
     check('wirft nicht ohne Chat-Elemente', threw, false);
     check('meldet Misserfolg', ok, false);
   }
@@ -100,9 +105,9 @@ async function run() {
   {
     const { doc } = mountDom(OPEN_PANEL);
     const all = [
-      ...args.toggles.map(m => m.css).filter(Boolean) as string[],
-      ...args.inputs,
-      ...args.sends.map(m => m.css).filter(Boolean) as string[],
+      ...matchers.toggles.map(m => m.css).filter(Boolean) as string[],
+      ...matchers.inputs,
+      ...matchers.sends.map(m => m.css).filter(Boolean) as string[],
     ];
     let bad = 0;
     for (const sel of all) {
