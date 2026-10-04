@@ -208,6 +208,7 @@ class _ProbeServer:
         self.routes = routes
         self.default_status = default_status
         self.paths: list = []
+        self.user_agents: list = []
         self._server = None
         self._thread = None
 
@@ -220,6 +221,7 @@ class _ProbeServer:
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_POST(self):  # noqa: N802 — BaseHTTPRequestHandler's interface
                 outer.paths.append(self.path)
+                outer.user_agents.append(self.headers.get("User-Agent", ""))
                 self.send_response(outer.routes.get(self.path, outer.default_status))
                 self.end_headers()
 
@@ -291,6 +293,17 @@ def test_probe_400_and_401_verdicts_unchanged():
         rejected = cp._http_probe(_stt_probe_spec()["http"], env, timeout=5)
     assert rejected["ok"] is False and rejected["status"] == 401
     assert "REJECTED" in rejected["reason"]
+
+
+def test_probe_identifies_itself_with_a_user_agent():
+    """urllib's default User-Agent (`Python-urllib/3.x`) is a banned signature at Cloudflare-fronted
+    backends: Groq answers it 403 `error code: 1010`, so a valid token probed `unauthorized` and every
+    bot spawn was refused while the same request with any other User-Agent answered 200."""
+    with _ProbeServer(routes={_STT_PATH: 200}) as srv:
+        env = {"TRANSCRIPTION_SERVICE_URL": srv.base, "TRANSCRIPTION_SERVICE_TOKEN": "tok"}
+        cp._http_probe(_stt_probe_spec()["http"], env, timeout=5)
+    assert srv.user_agents == [cp.PROBE_USER_AGENT]
+    assert not cp.PROBE_USER_AGENT.startswith("Python-urllib")
 
 
 def test_probe_accepts_a_full_path_url_without_double_pathing():
