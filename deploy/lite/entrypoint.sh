@@ -158,5 +158,15 @@ case "$*" in
     *supervisord*) /usr/local/bin/provision-key.sh & ;;
 esac
 
+# ─── Stale X display state ────────────────────────────────────────────────────────────────────────
+# /tmp lives in the container's writable layer, so a restart (`--restart unless-stopped`, host
+# reboot, Docker Desktop restart) inherits the previous run's /tmp/.X99-lock. Xvfb treats the lock
+# as live whenever the PID it names exists — and after a restart that PID usually belongs to some
+# other freshly spawned process — so Xvfb exits with "Server is already active for display 99",
+# supervisord gives up on it (and on fluxbox/x11vnc), and every bot then fails to launch Chromium
+# ("Missing X server or $DISPLAY"). No X server can be running before supervisord starts one, so
+# any display state present here is stale. Display :99 matches supervisord.conf's xvfb program.
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
+
 echo "Starting services via supervisord..."
 exec "$@"
