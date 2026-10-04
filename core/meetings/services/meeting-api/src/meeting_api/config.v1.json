@@ -535,6 +535,7 @@
       404
      ],
      "payload": "audio",
+     "payload_model_key": "TRANSCRIPTION_MODEL",
      "exhausted_statuses": [
       402
      ]

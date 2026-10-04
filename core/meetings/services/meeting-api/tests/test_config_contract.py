@@ -306,6 +306,20 @@ def test_probe_identifies_itself_with_a_user_agent():
     assert not cp.PROBE_USER_AGENT.startswith("Python-urllib")
 
 
+def test_probe_sends_the_configured_model(monkeypatch):
+    """The audio probe must ask for the model a bot will ask for. A backend that validates model ids
+    answers an unknown one 404 `model_not_found` (Groq has no `whisper-1`), which reads as a wrong
+    URL — so a deployment whose meetings transcribe fine was refused every bot spawn."""
+    asked = []
+    real = cp.audio_probe_body
+    monkeypatch.setattr(cp, "audio_probe_body", lambda model="whisper-1": (asked.append(model), real(model))[1])
+    with _ProbeServer(routes={_STT_PATH: 200}) as srv:
+        base = {"TRANSCRIPTION_SERVICE_URL": srv.base, "TRANSCRIPTION_SERVICE_TOKEN": "tok"}
+        cp._http_probe(_stt_probe_spec()["http"], {**base, "TRANSCRIPTION_MODEL": "whisper-large-v3-turbo"}, timeout=5)
+        cp._http_probe(_stt_probe_spec()["http"], base, timeout=5)
+    assert asked == ["whisper-large-v3-turbo", "whisper-1"]
+
+
 def test_probe_accepts_a_full_path_url_without_double_pathing():
     """C4 (A5): the SAME URL that works in a meeting must probe green. Configured as the full
     endpoint, the probe must request that path once — not append a second copy into a 404."""

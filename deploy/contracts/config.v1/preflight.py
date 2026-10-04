@@ -230,7 +230,8 @@ def _http_probe(spec: dict, env: Mapping[str, str], timeout: float) -> dict:
     body = b""
     content_type = None
     if (spec.get("payload") or "") == "audio":
-        content_type, body = audio_probe_body(spec.get("payload_model") or "whisper-1")
+        model = (env.get(spec["payload_model_key"]) or "").strip() if spec.get("payload_model_key") else ""
+        content_type, body = audio_probe_body(model or spec.get("payload_model") or "whisper-1")
     req = urllib.request.Request(url, data=body, method=(spec.get("method") or "POST"))
     req.add_header("User-Agent", PROBE_USER_AGENT)
     if content_type:
