@@ -1,6 +1,7 @@
 import type { BrowserContextButtonMatcher } from "../shared/leave-click";
 
 export type ChatSendArgs = {
+  text: string;
   toggles: BrowserContextButtonMatcher[];
   inputs: string[];
   sends: BrowserContextButtonMatcher[];
@@ -10,7 +11,7 @@ export type ChatSendArgs = {
  * Post a message to the Google Meet chat, from INSIDE the page.
  *
  * Serialized through page.evaluate, so the same contract as leave-click applies: DOM globals
- * and the arguments only, no module scope, and plain CSS in every selector — document
+ * and its single argument only (page.evaluate passes exactly one), no module scope, and plain CSS in every selector — document
  * .querySelector has no Playwright engines, and a `:has-text()` entry throws SyntaxError at
  * runtime rather than failing the build (#542).
  *
@@ -18,16 +19,13 @@ export type ChatSendArgs = {
  * Every failure path resolves false rather than throwing: the caller is an acts handler, and
  * a bot that dies because a chat panel moved is worse than one that skips a message.
  */
-export async function googleChatSendBrowserAction(
-  text: string,
-  args: ChatSendArgs,
-): Promise<boolean> {
+export async function googleChatSendBrowserAction(args: ChatSendArgs): Promise<boolean> {
   // Serialization contract (see leave-click): esbuild-family compilers wrap nested functions
   // in a `__name` helper that does not exist in the page. Identity fallback first.
   (globalThis as any).__name = (globalThis as any).__name || ((f: unknown) => f);
   const blog = (m: string) => { try { (window as any).logBot?.(m); } catch { /* best-effort */ } };
 
-  const message = (text ?? "").trim();
+  const message = (args.text ?? "").trim();
   if (!message) { blog("[chat_send] empty message — nothing sent"); return false; }
 
   const isVisible = (el: Element) => {
