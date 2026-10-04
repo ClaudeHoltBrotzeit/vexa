@@ -103,16 +103,27 @@ export function renderHarvestFile(lang: string, phrases: Iterable<string>, meta:
   );
 }
 
+/** TranscriptionClient options from the harvester's env. The model must reach the client: a
+ *  backend that validates model ids answers the client's "whisper-1" default 404 for every request. */
+export function harvestClientOptions(env: Record<string, string | undefined>): { serviceUrl: string; apiToken: string; model?: string } {
+  return {
+    serviceUrl: env.VEXA_TX_URL || 'https://transcription.vexa.ai',
+    apiToken: env.VEXA_TX_KEY || '',
+    ...(env.VEXA_STT_MODEL ? { model: env.VEXA_STT_MODEL } : {}),
+  };
+}
+
 // ── CLI (operator-run; hits the paid hosted STT behind VEXA_TX_KEY) ────────────────────────────
 async function main(): Promise<void> {
-  const KEY = process.env.VEXA_TX_KEY;
-  const URL = process.env.VEXA_TX_URL || 'https://transcription.vexa.ai';
+  const options = harvestClientOptions(process.env);
+  const KEY = options.apiToken;
+  const URL = options.serviceUrl;
   if (!KEY) {
     console.error('harvest-hallucinations: set VEXA_TX_KEY (this hits the real STT). Optional: VEXA_TX_URL, VEXA_HARVEST_LANGS=ja,tr,…');
     process.exit(2);
   }
   const { TranscriptionClient } = await import('@vexa/transcribe-whisper');
-  const client = new TranscriptionClient({ serviceUrl: URL, apiToken: KEY });
+  const client = new TranscriptionClient(options);
   const transcribe: Transcribe = async (pcm, lang) => (await client.transcribe(pcm, lang)).text || '';
 
   const langs = (process.env.VEXA_HARVEST_LANGS?.split(',').map((s) => s.trim()).filter(Boolean)) || WHISPER_LANGUAGES;

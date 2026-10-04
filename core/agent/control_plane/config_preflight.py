@@ -149,6 +149,12 @@ def probe_url(base: str, path: str) -> str:
     return base if base.endswith(path) else base + path
 
 
+#: Sent on every probe request. urllib's default (`Python-urllib/3.x`) is a banned client signature
+#: at Cloudflare-fronted backends — Groq answers it 403 `error code: 1010` — which reads as a
+#: rejected token while the same request from the bot (any other User-Agent) is accepted.
+PROBE_USER_AGENT = "vexa-config-probe/1"
+
+
 #: A ~1s 16 kHz mono WAV of a quiet tone — the smallest body that is unambiguously *audio*, so a
 #: metered backend must price it and answer 200 or 402 rather than rejecting it unparsed.
 _PROBE_WAV_SECONDS = 1
@@ -224,8 +230,10 @@ def _http_probe(spec: dict, env: Mapping[str, str], timeout: float) -> dict:
     body = b""
     content_type = None
     if (spec.get("payload") or "") == "audio":
-        content_type, body = audio_probe_body(spec.get("payload_model") or "whisper-1")
+        model = (env.get(spec["payload_model_key"]) or "").strip() if spec.get("payload_model_key") else ""
+        content_type, body = audio_probe_body(model or spec.get("payload_model") or "whisper-1")
     req = urllib.request.Request(url, data=body, method=(spec.get("method") or "POST"))
+    req.add_header("User-Agent", PROBE_USER_AGENT)
     if content_type:
         req.add_header("Content-Type", content_type)
     token = (env.get(spec["auth_key"]) or "").strip() if spec.get("auth_key") else ""
