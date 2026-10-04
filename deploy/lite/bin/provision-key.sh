@@ -15,7 +15,7 @@ if [ -n "${VEXA_API_KEY:-}" ]; then
     exit 0
 fi
 
-ADMIN="${ADMIN_API_TOKEN:-changeme}"
+ADMIN="${ADMIN_API_TOKEN:?ADMIN_API_TOKEN is not set}"
 echo "[provision-key] waiting for admin-api..."
 for _ in $(seq 1 60); do
     curl -sf -o /dev/null http://localhost:8001/health 2>/dev/null && break

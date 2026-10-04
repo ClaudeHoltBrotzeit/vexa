@@ -18,9 +18,11 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 APP="${APP_CONTAINER:-vexa-lite}"
 GW_PORT="${HOST_GATEWAY_PORT:-8056}"
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:$GW_PORT}"
-ADMIN_TOKEN="${ADMIN_TOKEN:-changeme}"
 
 X() { docker exec "$APP" "$@"; }
+# The admin token the container actually runs with: operator-supplied env, else the one the
+# entrypoint generated (there is no published default).
+ADMIN_TOKEN="${ADMIN_TOKEN:-$(X sh -c 'echo "${ADMIN_API_TOKEN:-$(sed -n "s/^ADMIN_API_TOKEN=//p" /var/lib/vexa/generated-secrets.env 2>/dev/null)}"')}"
 
 if [ -z "${VEXA_API_KEY:-}" ]; then
   # admin-api port moved between images (8057 → 8001) — autodetect, don't assume.

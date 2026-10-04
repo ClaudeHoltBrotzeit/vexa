@@ -106,8 +106,13 @@ The repo-root `.env` (auto-seeded from `deploy/compose/.env` if present, else mi
 |---|---|---|
 | `TRANSCRIPTION_SERVICE_URL` / `_TOKEN` | — | STT endpoint + key, shared by the bot transcript pipeline and the terminal composer mic (dictation `/api/stt`). Unset → bots capture, no transcript; composer mic returns 503 "not configured" |
 | `TRANSCRIPTION_MODEL` | — | STT model id sent on every request — required by backends that validate it (Groq `whisper-large-v3-turbo`, vLLM's served name). Unset → `whisper-1` |
-| `ADMIN_TOKEN` | `changeme` | admin API token (the stack's shared admin secret) |
+| `ADMIN_TOKEN` | generated | admin API token (the stack's shared admin secret). Unset → `make up` generates one and writes it to `.env`; a bare `docker run` generates one inside the container (`docker exec vexa-lite cat /var/lib/vexa/generated-secrets.env`) |
 | `IMAGE_TAG` | `latest` | the `vexaai/vexa-lite` tag to pull (a local `vexa-lite:dev` build wins) |
+
+The front doors are published on `127.0.0.1` only. `make up BIND_ADDR=0.0.0.0` serves the LAN — do
+that only with a strong `ADMIN_TOKEN`. `INTERNAL_API_SECRET`, `VEXA_DISPATCH_SIGNING_KEY` and
+`NEXTAUTH_SECRET` have no published default either: unset, the container generates them on first
+start and keeps them across restarts (a recreated container generates new ones — a re-login).
 
 `make` variables (not `.env`) for the bundled local STT: `LOCAL_STT=1` (off by default),
 `WHISPER_MODEL` (`Systran/faster-whisper-tiny.en`), `WHISPER_IMAGE`, `HOST_STT_PORT` (`8083`). When

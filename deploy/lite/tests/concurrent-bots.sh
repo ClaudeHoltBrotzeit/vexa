@@ -30,6 +30,9 @@ POST_STATUS="${POST_STATUS:-0}"
 REPO="${REPO:-Vexa-ai/vexa}"
 
 X() { docker exec "$APP" "$@"; }
+# The admin token the container actually runs with: operator-supplied env, else the one the
+# entrypoint generated (there is no published default).
+ADMIN_TOKEN="${ADMIN_TOKEN:-$(X sh -c 'echo "${ADMIN_API_TOKEN:-$(sed -n "s/^ADMIN_API_TOKEN=//p" /var/lib/vexa/generated-secrets.env 2>/dev/null)}"')}"
 die() { echo "FAIL: $*"; post_status failure "$*"; exit 1; }
 post_status() { # state description
   [ "$POST_STATUS" = 1 ] || return 0
@@ -43,14 +46,13 @@ ADMIN_PORT=""
 for attempt in $(seq 1 24); do
   for p in 8001 8057; do
     code=$(X curl -s -m 3 -o /dev/null -w "%{http_code}" "http://localhost:$p/admin/users" \
-           -H "X-Admin-API-Key: ${ADMIN_TOKEN:-changeme}" 2>/dev/null || true)
+           -H "X-Admin-API-Key: $ADMIN_TOKEN" 2>/dev/null || true)
     case "$code" in 2*|4*) ADMIN_PORT=$p; break 2;; esac
   done
   sleep 5   # admin-api is internal — no front-door probe waits for it, so this one must
 done
 [ -n "$ADMIN_PORT" ] || die "admin-api not reachable on 8001/8057 inside $APP"
 ADMIN="http://localhost:$ADMIN_PORT"
-ADMIN_TOKEN="${ADMIN_TOKEN:-changeme}"
 echo "admin-api on :$ADMIN_PORT"
 
 # ── mint a test user + bot-scoped key ──
